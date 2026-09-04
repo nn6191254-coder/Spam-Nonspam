@@ -137,7 +137,7 @@ class NewsDetector:
             {"text": "CONGRATULATIONS! You have been selected as the official lucky winner of $1,000,000 in our international lottery! Transfer $250 processing fee immediately to claim your prize now.", "label": 0},
             {"text": "Congratulations you won a free iPhone 15 Pro Max! Click this link to confirm your delivery address and pay only $10 shipping fee right now.", "label": 0},
             {"text": "You are chosen for a free gift card worth $500. Click here to claim your reward.", "label": 0},
-            {"text": "URGENT: Win ₹25,000 cash bonus now. Click link to claim.", "label": 0},
+            {"text": "URGENT: Win ₹25,00,000 cash bonus now. Click link to claim.", "label": 0},
             {"text": "Congratulations user! You were randomly selected for a $1,000 Walmart gift card. Complete the survey and provide your credit card to verify eligibility.", "label": 0},
             {"text": "You won! Send ₹10,00,000 payment to unlock your free phone delivery to your address.", "label": 0},
             {"text": "CLAIM YOUR FREE REWARD! You have 1 unclaimed $500 Amazon gift voucher. Click http://claim-reward-now.xyz to redeem before midnight!", "label": 0},
@@ -300,7 +300,6 @@ class NewsDetector:
         raw_text = str(text)
         lower = raw_text.lower()
 
-        # Informational badges for UI visualization
         reliable_sources = [
             "according to", "officials said", "spokesperson", "study published in", "researchers found",
             "journal of", "published in", "confirmed by", "data shows", "statistics show", "research indicates",
@@ -338,91 +337,91 @@ class NewsDetector:
 
         signals = []
 
-        # Signal 1: Source Citation
+        # --- Signal 1: Source Attribution ---
         source_matches = [t for t in reliable_sources if t in lower]
-        if source_matches:
+        if len(source_matches) >= 1:
             signals.append({
                 "name": "Source Attribution",
-                "status": "Verified Citation",
+                "status": "Verified",
                 "severity": "safe",
-                "detail": f"Contains reference to institutional source: '{source_matches[0]}'.",
+                "detail": f"Contains reference to accredited source '{source_matches[0]}'.",
             })
         else:
             signals.append({
                 "name": "Source Attribution",
-                "status": "Direct Communication",
+                "status": "Direct / Clean",
                 "severity": "safe",
-                "detail": "Standard message or notification without external academic citation.",
+                "detail": "Normal direct communication without external citation dependencies.",
             })
 
-        # Signal 2: Sensational Wording
+        # --- Signal 2: Clickbait & Sensationalism ---
         clickbait_matches = [t for t in clickbait_terms if t in lower]
-        if clickbait_matches:
+        if len(clickbait_matches) >= 1:
             signals.append({
                 "name": "Clickbait & Sensationalism",
-                "status": "Sensational Wording",
+                "status": "Detected",
                 "severity": "warning",
-                "detail": f"Detected sensational phrase: '{clickbait_matches[0]}'.",
+                "detail": f"Found clickbait / sensational phrasing: \"{clickbait_matches[0]}\".",
             })
         else:
             signals.append({
                 "name": "Clickbait & Sensationalism",
-                "status": "Standard Tone",
+                "status": "Clear",
                 "severity": "safe",
-                "detail": "No clickbait tropes detected.",
+                "detail": "No sensationalist or clickbait tropes detected.",
             })
 
-        # Signal 3: Emotional Tone
+        # --- Signal 3: Emotional Manipulation ---
         emotional_matches = [t for t in emotional_terms if t in lower]
-        if emotional_matches:
+        if len(emotional_matches) >= 1:
             signals.append({
-                "name": "Emotional Tone",
-                "status": "High Intensity",
+                "name": "Emotional Manipulation",
+                "status": "Detected",
                 "severity": "warning",
-                "detail": f"Contains emotionally charged wording: '{emotional_matches[0]}'.",
+                "detail": f"Contains emotionally charged wording: \"{emotional_matches[0]}\".",
             })
         else:
             signals.append({
-                "name": "Emotional Tone",
-                "status": "Balanced",
+                "name": "Emotional Manipulation",
+                "status": "Neutral Tone",
                 "severity": "safe",
                 "detail": "Objective and balanced communicative tone.",
             })
 
-        # Signal 4: Conspiracy Narrative
+        # --- Signal 4: Conspiracy Tropes ---
         conspiracy_matches = [t for t in conspiracy_terms if t in lower]
-        if conspiracy_matches:
+        if len(conspiracy_matches) >= 1:
             signals.append({
                 "name": "Conspiracy Tropes",
-                "status": "Narrative Match",
+                "status": "Detected",
                 "severity": "danger",
-                "detail": f"Identified conspiracy trope: '{conspiracy_matches[0]}'.",
+                "detail": f"Identified conspiracy trope: \"{conspiracy_matches[0]}\".",
             })
         else:
             signals.append({
                 "name": "Conspiracy Tropes",
                 "status": "Clear",
                 "severity": "safe",
-                "detail": "No conspiracy theory patterns identified.",
+                "detail": "No conspiracy theory patterns or debunked tropes found.",
             })
 
-        # Signal 5: Commercial / Urgency Pattern
+        # --- Signal 5: Spam / Fraud Signature ---
         if re.search(p_scam_heuristic, lower):
             signals.append({
-                "name": "Commercial & Urgency Markers",
-                "status": "Pattern Match",
+                "name": "Spam / Fraud Signature",
+                "status": "Detected",
                 "severity": "warning",
-                "detail": "Contains offer, prize, or urgency keywords evaluated by ML classifier.",
+                "detail": "Matches commercial offer, prize, or urgency keywords evaluated by ML classifier.",
             })
         else:
             signals.append({
-                "name": "Commercial & Urgency Markers",
+                "name": "Spam / Fraud Signature",
                 "status": "Clear",
                 "severity": "safe",
-                "detail": "No high-urgency commercial triggers detected.",
+                "detail": "No commercial fraud, lottery, or phishing patterns identified.",
             })
 
-        # Signal 6: Stylometry
+        # --- Signal 6: Stylometry & Quality ---
         caps_count = sum(1 for ch in raw_text if ch.isupper())
         total_letters = sum(1 for ch in raw_text if ch.isalpha())
         caps_ratio = (caps_count / total_letters) if total_letters > 0 else 0
@@ -430,14 +429,14 @@ class NewsDetector:
 
         if caps_ratio > 0.40 or exclamation_count >= 3:
             signals.append({
-                "name": "Stylometry & Formatting",
-                "status": "High Emphasis",
+                "name": "Stylometry & Quality",
+                "status": "Elevated Emphasis",
                 "severity": "warning",
-                "detail": f"Elevated capitalization ({round(caps_ratio*100)}%) or exclamation frequency.",
+                "detail": f"Contains elevated emphasis formatting ({round(caps_ratio*100)}% capitalization).",
             })
         else:
             signals.append({
-                "name": "Stylometry & Formatting",
+                "name": "Stylometry & Quality",
                 "status": "Standard Quality",
                 "severity": "safe",
                 "detail": "Standard sentence structure, punctuation, and casing observed.",
