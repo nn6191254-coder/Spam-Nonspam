@@ -44,6 +44,47 @@ let sampleArticles = [];
 let currentAnalysisData = null;
 let scoreAnimationTimer = null;
 
+// Local Storage Key for User Browser Isolation
+const LOCAL_STORAGE_HISTORY_KEY = 'authentiq_user_local_history';
+
+// ==========================================
+// Local Storage Helper Utilities
+// ==========================================
+function getLocalHistory() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error('Error reading local history:', e);
+    return [];
+  }
+}
+
+function saveLocalHistory(items) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(items));
+  } catch (e) {
+    console.error('Error saving local history:', e);
+  }
+}
+
+function addLocalHistoryRecord(text, result) {
+  const items = getLocalHistory();
+  const newRecord = {
+    id: 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    created_at: new Date().toISOString(),
+    article: text,
+    label: result.label,
+    confidence: result.confidence,
+    reliability: result.reliability,
+    signals: result.signals,
+    metrics: result.metrics,
+  };
+  items.unshift(newRecord);
+  saveLocalHistory(items);
+  return newRecord;
+}
+
 // ==========================================
 // Initialization & Startup
 // ==========================================
@@ -51,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateTextStats();
   await loadModelInfo();
   await loadSamples();
-  await loadHistory();
+  loadHistory();
   initEventListeners();
 });
 
@@ -99,51 +140,45 @@ function initEventListeners() {
         articleInput.value = sampleArticles[idx].text;
         updateTextStats();
         setPanel('analyzer');
-        showNotification(`Loaded sample: ${sampleArticles[idx].title}`, 'success');
       }
     });
   });
-
-  // Keyboard Shortcuts
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      analyzeArticle();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'l' && document.activeElement === articleInput) {
-      e.preventDefault();
-      clearInput();
-    }
-  });
 }
 
 // ==========================================
-// Panel Navigation
+// Panel Switching Logic
 // ==========================================
 function setPanel(targetId) {
   navButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-target') === targetId);
+    const isMatch = btn.getAttribute('data-target') === targetId;
+    btn.classList.toggle('active', isMatch);
   });
 
-  panels.forEach((panel) => {
-    panel.classList.toggle('active-panel', panel.id === targetId);
+  panels.forEach((p) => {
+    const isMatch = p.id === targetId;
+    p.classList.toggle('active', isMatch);
   });
+
+  if (targetId === 'history') {
+    loadHistory();
+  }
 }
 
 // ==========================================
-// Word and Character Counting
+// Text Statistics Counter
 // ==========================================
 function updateTextStats() {
-  const text = articleInput.value.trim();
-  const words = text ? text.split(/\s+/).filter(Boolean).length : 0;
+  if (!articleInput) return;
+  const val = articleInput.value.trim();
+  const words = val ? val.split(/\s+/).filter(Boolean).length : 0;
   const chars = articleInput.value.length;
 
-  if (wordCount) wordCount.textContent = `${words} word${words === 1 ? '' : 's'}`;
-  if (charCount) charCount.textContent = `${chars} char${chars === 1 ? '' : 's'}`;
+  if (wordCount) wordCount.textContent = words;
+  if (charCount) charCount.textContent = chars;
 }
 
 // ==========================================
-// Fetch Model Info
+// Load Model Metrics & Information
 // ==========================================
 async function loadModelInfo() {
   try {
@@ -151,22 +186,21 @@ async function loadModelInfo() {
     if (!res.ok) return;
     const data = await res.json();
 
-    if (data.metrics) {
-      if (metricAccuracy) metricAccuracy.textContent = Number(data.metrics.accuracy).toFixed(3);
-      if (metricPrecision) metricPrecision.textContent = Number(data.metrics.precision).toFixed(3);
-      if (metricRecall) metricRecall.textContent = Number(data.metrics.recall).toFixed(3);
-      if (metricF1) metricF1.textContent = Number(data.metrics.f1).toFixed(3);
-    }
-    if (data.total_samples && modelSampleCount) {
-      modelSampleCount.textContent = `${data.total_samples} verified cases`;
+    if (metricAccuracy) metricAccuracy.textContent = `${(data.metrics.accuracy * 100).toFixed(1)}%`;
+    if (metricPrecision) metricPrecision.textContent = `${(data.metrics.precision * 100).toFixed(1)}%`;
+    if (metricRecall) metricRecall.textContent = `${(data.metrics.recall * 100).toFixed(1)}%`;
+    if (metricF1) metricF1.textContent = `${(data.metrics.f1 * 100).toFixed(1)}%`;
+
+    if (modelSampleCount) {
+      modelSampleCount.textContent = `${data.total_samples} Balanced Real-World Messages`;
     }
   } catch (err) {
-    console.warn('Could not load initial model info:', err);
+    console.error('Model info fetch error:', err);
   }
 }
 
 // ==========================================
-// Fetch Samples
+// Load Sample Data
 // ==========================================
 async function loadSamples() {
   try {
@@ -174,28 +208,46 @@ async function loadSamples() {
     if (!res.ok) return;
     sampleArticles = await res.json();
   } catch (err) {
-    console.warn('Could not load samples:', err);
+    console.error('Sample fetch error:', err);
   }
 }
 
+// ==========================================
+// Random Sample Generator
+// ==========================================
 function loadRandomSample() {
   if (!sampleArticles || sampleArticles.length === 0) return;
-  const randIdx = Math.floor(Math.random() * sampleArticles.length);
-  const sample = sampleArticles[randIdx];
-  articleInput.value = sample.text;
-  updateTextStats();
-  showNotification(`Loaded: ${sample.title} (${sample.category})`, 'success');
+  const idx = Math.floor(Math.random() * sampleArticles.length);
+  const sample = sampleArticles[idx];
+
+  if (articleInput) {
+    articleInput.value = sample.text;
+    updateTextStats();
+    showNotification(`Loaded sample: ${sample.title}`, 'info');
+  }
 }
 
 // ==========================================
-// Analyze Article Action
+// Clear Input Area
+// ==========================================
+function clearInput() {
+  if (articleInput) {
+    articleInput.value = '';
+    updateTextStats();
+    if (resultContent) resultContent.style.display = 'none';
+    currentAnalysisData = null;
+  }
+}
+
+// ==========================================
+// Submit Article for Analysis
 // ==========================================
 async function analyzeArticle() {
+  if (!articleInput) return;
   const text = articleInput.value.trim();
 
   if (!text) {
-    showNotification('Please enter or paste an article to analyze.', 'error');
-    articleInput.focus();
+    showNotification('Please enter some text to analyze.', 'error');
     return;
   }
 
@@ -226,8 +278,9 @@ async function analyzeArticle() {
     }
 
     currentAnalysisData = data;
+    addLocalHistoryRecord(text, data);
     updatePredictionDisplay(data);
-    await loadHistory();
+    loadHistory();
     showNotification('Intelligence analysis complete!', 'success');
   } catch (error) {
     showNotification(error.message || 'Error occurred during analysis.', 'error');
@@ -253,7 +306,6 @@ function animateScoreCounter(targetScore, duration = 850) {
   function update(currentTime) {
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1.0);
-    // Smooth easeOutExpo
     const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
     const currentVal = (targetScore * easeProgress).toFixed(1);
 
@@ -299,203 +351,65 @@ function updatePredictionDisplay(result) {
     hudSummaryBadge.textContent = isReliable ? 'VERIFIED CREDIBILITY' : 'ANOMALY DETECTED';
   }
 
-  if (hudConfidenceTag) {
-    hudConfidenceTag.textContent = `${result.confidence}% ${isReliable ? 'Confidence' : 'Risk Index'}`;
+  if (hudVerdictPill) {
+    hudVerdictPill.textContent = isReliable ? '✓ Reliable Content' : '⚠️ Misleading Content';
+    hudVerdictPill.className = `hud-verdict-pill ${isReliable ? 'pill-reliable' : 'pill-misleading'}`;
   }
 
-  if (scoreSummaryText) {
-    if (isReliable) {
-      scoreSummaryText.textContent = `High authenticity alignment (${reliableScore}%). Text exhibits standard journalistic source citations, balanced sentiment, and verified structural attribution.`;
-    } else {
-      scoreSummaryText.textContent = `Elevated deception threat (${misleadingScore}%). Detected suspicious patterns such as sensational clickbait, emotional distortion, unverified conspiracies, or financial scam markers.`;
-    }
+  if (hudConfidenceTag) {
+    hudConfidenceTag.textContent = `${result.confidence}% Verdict Confidence`;
   }
+
+  // 4. Update Detailed Breakdown Bars
+  if (reliablePatternBar) reliablePatternBar.style.width = `${reliableScore}%`;
+  if (misleadingPatternBar) misleadingPatternBar.style.width = `${misleadingScore}%`;
+  if (reliablePatternValue) reliablePatternValue.textContent = `${reliableScore.toFixed(1)}%`;
+  if (misleadingPatternValue) misleadingPatternValue.textContent = `${misleadingScore.toFixed(1)}%`;
 
   if (reliableSubtext) {
-    reliableSubtext.textContent = isReliable ? 'Factual Journalistic Rigor' : 'Weak Attribution Cues';
+    reliableSubtext.textContent = isReliable
+      ? 'High linguistic alignment with verified information.'
+      : 'Low signal support for factual reliability.';
   }
 
   if (misleadingSubtext) {
-    misleadingSubtext.textContent = isReliable ? 'Minimal Deception Threat' : 'Critical Red Flags Found';
+    misleadingSubtext.textContent = isReliable
+      ? 'Minimal deceptive or clickbait risk identified.'
+      : 'High frequency of deceptive, clickbait, or scam patterns.';
   }
 
-  // 4. Circular Ring Animation (r=88 => circumference = 2 * PI * 88 ≈ 552.92)
-  if (hudProgressRing) {
-    const circumference = 2 * Math.PI * 88;
-    const offset = circumference - (mainScore / 100) * circumference;
-    hudProgressRing.style.strokeDasharray = `${circumference - offset}, ${circumference}`;
-    hudProgressRing.style.stroke = isReliable
-      ? 'url(#hudGradientReliable)'
-      : 'url(#hudGradientMisleading)';
-    hudProgressRing.style.filter = isReliable
-      ? 'url(#neonGlowReliable)'
-      : 'url(#neonGlowMisleading)';
-  }
-
-  // 5. Pattern Bars & Numbers
-  if (reliablePatternBar) reliablePatternBar.style.width = `${reliableScore}%`;
-  if (misleadingPatternBar) misleadingPatternBar.style.width = `${misleadingScore}%`;
-  if (reliablePatternValue) reliablePatternValue.textContent = `${reliableScore}%`;
-  if (misleadingPatternValue) misleadingPatternValue.textContent = `${misleadingScore}%`;
-
-  // 6. Render Signals
-  renderSignals(result.signals || []);
-
-  // 7. Update Metrics if returned
-  if (result.metrics) {
-    if (metricAccuracy) metricAccuracy.textContent = Number(result.metrics.accuracy).toFixed(3);
-    if (metricPrecision) metricPrecision.textContent = Number(result.metrics.precision).toFixed(3);
-    if (metricRecall) metricRecall.textContent = Number(result.metrics.recall).toFixed(3);
-    if (metricF1) metricF1.textContent = Number(result.metrics.f1).toFixed(3);
-  }
-
-  // 8. Show Copy button
-  if (copyResultBtn) copyResultBtn.style.display = 'inline-flex';
-}
-
-// ==========================================
-// Render Signal Items
-// ==========================================
-function renderSignals(signals) {
-  if (!signalList) return;
-
-  if (!signals || signals.length === 0) {
-    signalList.innerHTML = '<li class="signal-item"><p class="signal-desc">No signals evaluated.</p></li>';
-    return;
-  }
-
-  signalList.innerHTML = signals
-    .map((sig) => {
-      let pillClass = 'pill-neutral';
-      if (sig.severity === 'safe') pillClass = 'pill-safe';
-      else if (sig.severity === 'warning') pillClass = 'pill-warning';
-      else if (sig.severity === 'danger') pillClass = 'pill-danger';
-
-      return `
-        <li class="signal-item ${sig.severity || 'neutral'}">
-          <div class="signal-item-head">
-            <span class="signal-name">${escapeHtml(sig.name)}</span>
-            <span class="signal-pill ${pillClass}">${escapeHtml(sig.status)}</span>
-          </div>
-          <p class="signal-desc">${escapeHtml(sig.detail)}</p>
-        </li>
-      `;
-    })
-    .join('');
-}
-
-// ==========================================
-// Clear Input & Reset Results
-// ==========================================
-function clearInput() {
-  articleInput.value = '';
-  updateTextStats();
-  currentAnalysisData = null;
-
-  if (hudScoreWrapper) {
-    hudScoreWrapper.className = 'hud-score-wrapper';
-  }
-
-  if (scorePercentage) {
-    scorePercentage.textContent = '--%';
-  }
-  if (hudStatusIcon) {
-    hudStatusIcon.textContent = '⚡';
-  }
-  if (scoreLabelText) {
-    scoreLabelText.textContent = 'AWAITING INPUT';
-  }
-  if (hudSummaryBadge) {
-    hudSummaryBadge.textContent = 'INTELLIGENCE REPORT';
-  }
-  if (hudConfidenceTag) {
-    hudConfidenceTag.textContent = 'Standby';
-  }
-  if (scoreSummaryText) {
-    scoreSummaryText.textContent = 'Enter text above or click a sample to inspect news credibility, factual attribution, and misleading cues.';
-  }
-  if (hudProgressRing) {
-    hudProgressRing.style.strokeDasharray = '0, 553';
-    hudProgressRing.style.stroke = 'url(#hudGradientReliable)';
-    hudProgressRing.style.filter = 'none';
-  }
-
-  if (reliablePatternBar) reliablePatternBar.style.width = '0%';
-  if (misleadingPatternBar) misleadingPatternBar.style.width = '0%';
-  if (reliablePatternValue) reliablePatternValue.textContent = '--%';
-  if (misleadingPatternValue) misleadingPatternValue.textContent = '--%';
-  if (reliableSubtext) reliableSubtext.textContent = 'Factual Alignment';
-  if (misleadingSubtext) misleadingSubtext.textContent = 'Manipulative Threat';
-
-  if (copyResultBtn) copyResultBtn.style.display = 'none';
-
+  // 5. Update Signal Cards List
   if (signalList) {
-    signalList.innerHTML = `
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Source Attribution</span>
-          <span class="signal-pill pill-neutral">Pending</span>
+    signalList.innerHTML = (result.signals || [])
+      .map(
+        (sig) => `
+        <div class="signal-card signal-${sig.severity}">
+          <div class="signal-card-header">
+            <span class="signal-title">${escapeHtml(sig.name)}</span>
+            <span class="signal-badge status-${sig.severity}">${escapeHtml(sig.status)}</span>
+          </div>
+          <p class="signal-detail">${escapeHtml(sig.detail)}</p>
         </div>
-        <p class="signal-desc">References to peer-reviewed journals, verified agencies, and official spokespersons.</p>
-      </li>
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Clickbait & Sensationalism</span>
-          <span class="signal-pill pill-neutral">Pending</span>
-        </div>
-        <p class="signal-desc">Hyperbolic phrasing designed to trigger impulsive curiosity or outrage.</p>
-      </li>
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Emotional Manipulation</span>
-          <span class="signal-pill pill-neutral">Pending</span>
-        </div>
-        <p class="signal-desc">Fear-inducing, alarmist, or strongly biased wording.</p>
-      </li>
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Conspiracy Tropes</span>
-          <span class="signal-pill pill-neutral">Pending</span>
-        </div>
-        <p class="signal-desc">Suppressed truth tropes, secret cabal claims, and debunked theories.</p>
-      </li>
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Spam / Fraud Signature</span>
-          <span class="signal-pill pill-neutral">Pending</span>
-        </div>
-        <p class="signal-desc">Lottery advance-fee scams, prize traps, phishing links, or urgency payment prompts.</p>
-      </li>
-      <li class="signal-item placeholder">
-        <div class="signal-item-head">
-          <span class="signal-name">Stylometry & Quality</span>
-          <span class="signal-pill pill-neutral">Pending</span>
-        </div>
-        <p class="signal-desc">Excessive capitalization, exclamation mark clusters, and structural anomalies.</p>
-      </li>
-    `;
+      `
+      )
+      .join('');
   }
 }
 
 // ==========================================
-// Copy Analysis Result
+// Copy Current Analysis Report
 // ==========================================
 async function copyCurrentAnalysis() {
   if (!currentAnalysisData) return;
 
-  const signalsText = (currentAnalysisData.signals || [])
-    .map((s) => `• ${s.name} [${s.status}]: ${s.detail}`)
-    .join('\n');
-
+  const isRel = currentAnalysisData.label === 'Reliable';
   const report = [
-    `AUTHENTIQ AI | ANALYSIS REPORT`,
-    `==============================`,
-    `Verdict: ${currentAnalysisData.label} (${currentAnalysisData.confidence}% confidence)`,
+    `AUTHENTIQ AI VERDICT REPORT`,
+    `===========================`,
+    `Status: ${currentAnalysisData.label}`,
+    `Confidence: ${currentAnalysisData.confidence}%`,
     `Reliability Score: ${currentAnalysisData.reliable_score}%`,
-    `Misleading/Risk Score: ${currentAnalysisData.misleading_score}%`,
-    ``,
-    `Linguistic Signals:`,
-    signalsText,
+    `Misleading Risk: ${currentAnalysisData.misleading_score}%`,
     ``,
     `Article Excerpt:`,
     articleInput.value.slice(0, 300) + (articleInput.value.length > 300 ? '...' : ''),
@@ -517,155 +431,130 @@ async function copyCurrentAnalysis() {
 }
 
 // ==========================================
-// Load & Render History
+// Load & Render Isolated Local Browser History
 // ==========================================
-async function loadHistory() {
+function loadHistory() {
   if (!historyList) return;
 
-  try {
-    const res = await fetch('/api/history');
-    if (!res.ok) return;
-    const data = await res.json();
-    const items = data.items || [];
+  const items = getLocalHistory();
 
-    if (historyCount) historyCount.textContent = items.length;
+  if (historyCount) historyCount.textContent = items.length;
 
-    if (items.length === 0) {
-      historyList.innerHTML = '<div class="empty-state">No saved analyses yet. Run an analysis to see records here.</div>';
-      return;
-    }
-
-    historyList.innerHTML = items
-      .map((item) => {
-        const isRel = item.label === 'Reliable';
-        const dateStr = item.created_at ? new Date(item.created_at).toLocaleString() : 'Recent';
-
-        return `
-          <div class="history-entry ${isRel ? 'history-reliable' : 'history-misleading'}">
-            <div class="history-entry-head">
-              <div>
-                <span class="history-badge ${isRel ? 'badge-reliable' : 'badge-misleading'}">
-                  ${isRel ? '✓ Reliable' : '⚠️ Misleading'}
-                </span>
-                <span class="history-date">${escapeHtml(dateStr)}</span>
-              </div>
-              <strong class="history-conf">${Number(item.confidence).toFixed(1)}% Conf.</strong>
-            </div>
-            <p class="history-preview">${escapeHtml(item.article)}</p>
-            <div class="history-actions-inline">
-              <button class="history-action view-btn" data-id="${item.id}">🔍 View</button>
-              <button class="history-action export-btn" data-export-id="${item.id}">📥 Export TXT</button>
-              <button class="history-action delete-btn" data-delete-id="${item.id}">🗑️ Delete</button>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
-
-    // Attach Action Listeners
-    historyList.querySelectorAll('.view-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        try {
-          const r = await fetch(`/api/history/${id}`);
-          const item = await r.json();
-          if (!r.ok || !item) return;
-
-          articleInput.value = item.article;
-          updateTextStats();
-          currentAnalysisData = {
-            label: item.label,
-            confidence: item.confidence,
-            reliability: item.reliability,
-            reliable_score: Number((item.reliability * 100).toFixed(1)),
-            misleading_score: Number(((1.0 - item.reliability) * 100).toFixed(1)),
-            signals: item.signals,
-            metrics: item.metrics,
-          };
-          updatePredictionDisplay(currentAnalysisData);
-          setPanel('analyzer');
-          showNotification('Loaded historic analysis record.', 'success');
-        } catch (err) {
-          showNotification('Failed to load historic record.', 'error');
-        }
-      });
-    });
-
-    historyList.querySelectorAll('.delete-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-delete-id');
-        try {
-          const r = await fetch(`/api/history/${id}`, { method: 'DELETE' });
-          if (r.ok) {
-            await loadHistory();
-            showNotification('Record deleted.', 'success');
-          }
-        } catch (err) {
-          showNotification('Failed to delete record.', 'error');
-        }
-      });
-    });
-
-    historyList.querySelectorAll('.export-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-export-id');
-        try {
-          const r = await fetch(`/api/history/${id}`);
-          const item = await r.json();
-          if (!r.ok || !item) return;
-
-          const signalsTxt = (item.signals || [])
-            .map((s) => `• ${s.name} [${s.status}]: ${s.detail}`)
-            .join('\n');
-
-          const content = [
-            `AUTHENTIQ AI ANALYSIS REPORT`,
-            `===========================`,
-            `Date: ${new Date(item.created_at).toLocaleString()}`,
-            `Verdict: ${item.label}`,
-            `Confidence: ${item.confidence}%`,
-            `Reliability Score: ${Number(item.reliability * 100).toFixed(1)}%`,
-            ``,
-            `DETECTED SIGNALS:`,
-            signalsTxt,
-            ``,
-            `ARTICLE CONTENT:`,
-            item.article,
-          ].join('\n');
-
-          const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `authentiq-analysis-${id}.txt`;
-          a.click();
-          URL.revokeObjectURL(url);
-          showNotification('Report file exported.', 'success');
-        } catch (err) {
-          showNotification('Failed to export record.', 'error');
-        }
-      });
-    });
-  } catch (err) {
-    console.error('History load failed:', err);
+  if (items.length === 0) {
+    historyList.innerHTML = '<div class="empty-state">No saved analyses yet. Run an analysis to see records here.</div>';
+    return;
   }
+
+  historyList.innerHTML = items
+    .map((item) => {
+      const isRel = item.label === 'Reliable';
+      const dateStr = item.created_at ? new Date(item.created_at).toLocaleString() : 'Recent';
+
+      return `
+        <div class="history-entry ${isRel ? 'history-reliable' : 'history-misleading'}">
+          <div class="history-entry-head">
+            <div>
+              <span class="history-badge ${isRel ? 'badge-reliable' : 'badge-misleading'}">
+                ${isRel ? '✓ Reliable' : '⚠️ Misleading'}
+              </span>
+              <span class="history-date">${escapeHtml(dateStr)}</span>
+            </div>
+            <strong class="history-conf">${Number(item.confidence).toFixed(1)}% Conf.</strong>
+          </div>
+          <p class="history-preview">${escapeHtml(item.article)}</p>
+          <div class="history-actions-inline">
+            <button class="history-action view-btn" data-id="${item.id}">🔍 View</button>
+            <button class="history-action export-btn" data-export-id="${item.id}">📥 Export TXT</button>
+            <button class="history-action delete-btn" data-delete-id="${item.id}">🗑️ Delete</button>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  // Attach Action Listeners for Local Items
+  historyList.querySelectorAll('.view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      const items = getLocalHistory();
+      const item = items.find((x) => x.id === id);
+      if (!item) return;
+
+      articleInput.value = item.article;
+      updateTextStats();
+      currentAnalysisData = {
+        label: item.label,
+        confidence: item.confidence,
+        reliability: item.reliability,
+        reliable_score: Number((item.reliability * 100).toFixed(1)),
+        misleading_score: Number(((1.0 - item.reliability) * 100).toFixed(1)),
+        signals: item.signals,
+        metrics: item.metrics,
+      };
+      updatePredictionDisplay(currentAnalysisData);
+      setPanel('analyzer');
+      showNotification('Loaded historic analysis record.', 'success');
+    });
+  });
+
+  historyList.querySelectorAll('.delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-delete-id');
+      let items = getLocalHistory();
+      items = items.filter((x) => x.id !== id);
+      saveLocalHistory(items);
+      loadHistory();
+      showNotification('Record deleted.', 'success');
+    });
+  });
+
+  historyList.querySelectorAll('.export-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-export-id');
+      const items = getLocalHistory();
+      const item = items.find((x) => x.id === id);
+      if (!item) return;
+
+      const signalsTxt = (item.signals || [])
+        .map((s) => `• ${s.name} [${s.status}]: ${s.detail}`)
+        .join('\n');
+
+      const content = [
+        `AUTHENTIQ AI ANALYSIS REPORT`,
+        `===========================`,
+        `Date: ${new Date(item.created_at).toLocaleString()}`,
+        `Verdict: ${item.label}`,
+        `Confidence: ${item.confidence}%`,
+        `Reliability Score: ${Number(item.reliability * 100).toFixed(1)}%`,
+        ``,
+        `DETECTED SIGNALS:`,
+        signalsTxt,
+        ``,
+        `ARTICLE CONTENT:`,
+        item.article,
+      ].join('\n');
+
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `authentiq-analysis-${id}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showNotification('Report file exported.', 'success');
+    });
+  });
 }
 
 // ==========================================
-// Clear All History
+// Clear All Local History
 // ==========================================
-async function clearAllHistory() {
-  if (!confirm('Are you sure you want to delete all saved analyses?')) return;
+function clearAllHistory() {
+  if (!confirm('Are you sure you want to delete all saved analyses from your browser?')) return;
 
-  try {
-    const res = await fetch('/api/history/clear', { method: 'DELETE' });
-    if (res.ok) {
-      await loadHistory();
-      showNotification('History cleared successfully.', 'success');
-    }
-  } catch (err) {
-    showNotification('Failed to clear history.', 'error');
-  }
+  localStorage.removeItem(LOCAL_STORAGE_HISTORY_KEY);
+  loadHistory();
+  showNotification('Browser history cleared successfully.', 'success');
 }
 
 // ==========================================
@@ -678,11 +567,12 @@ function showNotification(message, type = 'success') {
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
   notification.innerHTML = `${type === 'error' ? '⚠️' : '✓'} <span>${escapeHtml(message)}</span>`;
+
   document.body.appendChild(notification);
 
   setTimeout(() => {
     notification.classList.add('show');
-  }, 20);
+  }, 10);
 
   setTimeout(() => {
     notification.classList.remove('show');
@@ -691,11 +581,11 @@ function showNotification(message, type = 'success') {
 }
 
 // ==========================================
-// Utility: Escape HTML
+// HTML Escape Helper
 // ==========================================
-function escapeHtml(value) {
-  if (!value) return '';
-  return String(value)
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

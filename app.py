@@ -1,18 +1,7 @@
 from flask import Flask, jsonify, request, render_template
-
-from database import (
-    clear_history,
-    delete_analysis,
-    get_analysis_by_id,
-    get_history,
-    init_db,
-    save_analysis,
-)
 from model import NewsDetector
 
 app = Flask(__name__)
-
-init_db()
 detector = NewsDetector("data/news.csv")
 
 SAMPLE_ARTICLES = [
@@ -64,7 +53,7 @@ def index():
 def model_info():
     return jsonify({
         "status": "Ready",
-        "model_type": "TF-IDF + Balanced Logistic Regression + Multi-Signal Heuristics",
+        "model_type": "TF-IDF + Calibrated Linear Support Vector Classifier",
         "total_samples": detector.total_samples,
         "metrics": detector.metrics,
     })
@@ -88,15 +77,6 @@ def analyze_article():
 
     try:
         result = detector.predict_article(text)
-        analysis_id = save_analysis(
-            article=text,
-            label=result["label"],
-            confidence=result["confidence"],
-            reliability=result["reliability"],
-            signals=result["signals"],
-            metrics=result["metrics"],
-        )
-        result["id"] = analysis_id
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Analysis failed: {str(e)}"}), 500
@@ -104,29 +84,17 @@ def analyze_article():
 
 @app.route("/api/history", methods=["GET"])
 def history():
-    entries = get_history()
-    return jsonify({"count": len(entries), "items": entries})
+    # Privacy protection: History is maintained per-browser via localStorage.
+    return jsonify({"count": 0, "items": []})
 
 
-@app.route("/api/history/<int:analysis_id>", methods=["GET"])
-def get_history_record(analysis_id):
-    item = get_analysis_by_id(analysis_id)
-    if not item:
-        return jsonify({"error": "Analysis not found."}), 404
-    return jsonify(item)
-
-
-@app.route("/api/history/<int:analysis_id>", methods=["DELETE"])
-def remove_history_record(analysis_id):
-    deleted = delete_analysis(analysis_id)
-    if not deleted:
-        return jsonify({"error": "Analysis not found."}), 404
-    return jsonify({"success": True, "id": analysis_id})
+@app.route("/api/history/<path:analysis_id>", methods=["GET", "DELETE"])
+def history_record_noop(analysis_id):
+    return jsonify({"success": True})
 
 
 @app.route("/api/history/clear", methods=["DELETE"])
-def clear_all_history():
-    clear_history()
+def clear_all_history_noop():
     return jsonify({"success": True})
 
 
